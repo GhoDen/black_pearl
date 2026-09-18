@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Terminal</title>
+    <!-- Load Tailwind CSS -->
+    <script src="tailwindcss.js"></script>
+    <style>
+        /* Apply 'Inter' font and ensure full height/width */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Console Output Styling */
+        #console-output {
+            background-color: #000000;
+            border: 1px solid #333333;
+            height: 400px;
+            overflow-y: auto;
+            padding: 1rem;
+            line-height: 1.1em;
+            /* letter-spacing: -1px; */
+            font-family: 'Consolas', 'Monaco', monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            border-radius: 8px 8px 0 0;
+            color: #00ff00; /* Green terminal text */
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            width: 100%;
+            max-width: 100%;
+            margin: 0 auto;
+            font-size: clamp(4px, calc(100vw / 60), 16px); /* Responsive font size with min/max limits */
+            box-sizing: border-box;
+        }
+
+        /* Input Styling */
+        #command-input {
+            font-family: 'Consolas', 'Monaco', monospace;
+            border-radius: 8px 0 0 8px;
+            background-color: #222222;
+            color: #ffffff;
+            border: none;
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+
+        /* Status Styling */
+        .status-dot {
+            height: 10px;
+            width: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 1em;
+        }
+
+        #status-text {
+            overflow-wrap: anywhere;
+        }
+
+        .status-dot.disconnected { background-color: #ff0000; }
+        .status-dot.connected { background-color: #00ff00; }
+        .status-dot.connecting { background-color: #ffcc00; }
+    </style>
+</head>
+<body class="p-4">
+
+    <div class="w-full max-w-4xl flex flex-col h-full">
+        <div class="bg-gray-800 p-4 rounded-t-lg shadow-lg flex justify-between items-center">
+            <h1 class="text-xl font-bold text-white">Netcat-Proxy Terminal (WS)</h1>
+            <div id="status" class="flex items-center text-sm text-gray-400">
+                <span id="status-dot" class="status-dot disconnected mr-2"></span>
+                <span id="status-text">Disconnected</span>
+            </div>
+        </div>
+
+        <!-- Connection Settings -->
+        <div class="bg-gray-700 p-4 flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 rounded-b-lg mb-4">
+            <input type="text" id="ws-url" value="" placeholder="ws://example.com/telnet-proxy"
+                   class="flex-grow p-2 rounded bg-gray-600 text-white placeholder-gray-400 focus:ring-blue-500 focus:border-blue-500">
+            <button id="connect-btn"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition duration-150 ease-in-out">
+                Connect
+            </button>
+        </div>
+
+        <!-- Terminal Output -->
+        <div id="console-output" class="flex-grow rounded-md text-sm">
+            --- WebSocket Terminal Ready ---
+            <br>
+        </div>
+
+        <!-- Input Area -->
+        <div class="mt-4 flex">
+            <input type="text" id="command-input" placeholder="Type command and press Enter..." disabled
+                   class="w-full p-3 text-lg focus:outline-none">
+            <button id="send-btn" disabled
+                    class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-r-lg transition duration-150 ease-in-out">
+                Send
+            </button>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // Global references
+        const output = document.getElementById('console-output');
+        const input = document.getElementById('command-input');
+        const statusText = document.getElementById('status-text');
+        const statusDot = document.getElementById('status-dot');
+        const connectBtn = document.getElementById('connect-btn');
+        const sendBtn = document.getElementById('send-btn');
+        const wsUrlInput = document.getElementById('ws-url');
+
+        let ws = null; // WebSocket instance
+
+        // --- Simple file transfer state ---
+        // Server sends: BEGIN<bytes>END (raw bytes decoded as text by proxy)
+        // We buffer between markers and then prompt user for a filename to download.
+    let receivingFile = false;
+    let fileChunks = [];
+    // Markers MUST match backend `FILE_BEGIN_MARKER` / `FILE_END_MARKER`
+    const FILE_BEGIN_MARKER = '_FILE_START_TAG_RJcGYETKFodguvnd@G8djEWwL86Pivicmb89yW@Zm@JiTRkm62wg';
+    const FILE_END_MARKER = '_FILE_END_TAG_-G4p8_atmWgCuW3wvYaE@teZcp3Hx!N7_f_n**8wDP*HdQ.y-qkn';
+
+        function resetFileState() {
+            receivingFile = false;
+            fileChunks = [];
+        }
+
+        function saveBufferedFile() {
+            const fileDataString = fileChunks.join(''); // Concatenate as received
+            const defaultName = 'download.bin';
+            const name = prompt('Enter filename to save:', defaultName);
+            if (!name) {
+                writeToConsole('[FILE] Download cancelled.', 'text-yellow-400');
+                resetFileState();
+                return;
+            }
+            // Create a Blob; note this may corrupt true binary content because of UTF-8 decoding earlier.
+            const blob = new Blob([fileDataString], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            writeToConsole(`[FILE] Saved ${fileDataString.length} bytes as ${name}`, 'text-yellow-400');
+            resetFileState();
+        }
+
+        // Helper function to write to the console output
+        function writeToConsole(message, className = '') {
+            // Check if the last element has the same className (text-green-300)
+            // If so, append to it instead of creating a new div
+            const lastChild = output.lastElementChild;
+            if (className === 'text-green-300' && lastChild && lastChild.className === 'text-green-300') {
+                // Append to existing element without adding a newline
+                lastChild.textContent += message;
+            } else {
+                const line = document.createElement('div');
+                line.textContent = message;
+                line.className = className;
+                output.appendChild(line);
+            }
+            // Scroll to the bottom
+            output.scrollTop = output.scrollHeight;
+        }
+
+        // Helper function to update connection status
+        function updateStatus(state, message) {
+            statusText.textContent = message;
+            statusDot.className = `status-dot ${state}`;
+
+            const isConnected = state === 'connected';
+            input.disabled = !isConnected;
+            sendBtn.disabled = !isConnected;
+            connectBtn.disabled = isConnected;
+            wsUrlInput.disabled = isConnected;
+        }
+
+        // Initialize the default WebSocket URL to the current host's root path
+        // This assumes a WebSocket server is running on the same domain and port,
+        // acting as the proxy to the real port 23 or target service.
+    const defaultWsUrl = `ws://${window.location.hostname}:9000/web_service`;
+        wsUrlInput.value = defaultWsUrl;
+
+        // --- WebSocket Connection Logic ---
+
+        function connectWebSocket() {
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                writeToConsole("Already connected or connecting.", 'text-yellow-400');
+                return;
+            }
+
+            const url = wsUrlInput.value.trim();
+            if (!url) {
+                writeToConsole("Please enter a valid WebSocket URL.", 'text-red-500');
+                return;
+            }
+
+            try {
+                updateStatus('connecting', `Connecting...`);
+                ws = new WebSocket(url);
+            } catch (error) {
+                writeToConsole(`[ERROR] Failed to create WebSocket: ${error.message}`, 'text-red-500');
+                updateStatus('disconnected', 'Disconnected');
+                return;
+            }
+
+            ws.onopen = () => {
+                updateStatus('connected', `Connected`);
+                writeToConsole(`[SYSTEM] Connection successful.`, 'text-yellow-400');
+                input.focus();
+            };
+
+            // Expect binary frames for data; set binaryType before connect
+            ws.binaryType = 'arraybuffer';
+
+            // Buffer for marker parsing across frames
+            const textDecoder = new TextDecoder('utf-8');
+            const textEncoder = new TextEncoder();
+            let textPendingBytes = new Uint8Array(0); // accumulates non-file text & possible BEGIN overlap
+            let fileBuffer = []; // array of Uint8Array chunks for current file
+            let flushTimer = null; // debounce timer for flushing pending text
+
+            function concatUint8Arrays(chunks) {
+                let total = 0;
+                for (const c of chunks) total += c.length;
+                const out = new Uint8Array(total);
+                let offset = 0;
+                for (const c of chunks) { out.set(c, offset); offset += c.length; }
+                return out;
+            }
+
+            function indexOfSubarray(haystack, needle) {
+                if (needle.length === 0) return -1;
+                outer: for (let i = 0; i <= haystack.length - needle.length; i++) {
+                    for (let j = 0; j < needle.length; j++) {
+                        if (haystack[i + j] !== needle[j]) continue outer;
+                    }
+                    return i;
+                }
+                return -1;
+            }
+
+            const BEGIN_BYTES = textEncoder.encode(FILE_BEGIN_MARKER);
+            const END_BYTES = textEncoder.encode(FILE_END_MARKER);
+            const OVERLAP_KEEP = Math.max(BEGIN_BYTES.length - 1, 8); // retain enough bytes for marker + multibyte safety
+            const FLUSH_DELAY_MS = 100; // debounce delay for automatic flush
+
+            function flushTextPending(final=false) {
+                if (textPendingBytes.length === 0) return;
+                const text = textDecoder.decode(textPendingBytes, { stream: !final });
+                if (text) writeToConsole(text, 'text-green-300');
+                textPendingBytes = new Uint8Array(0);
+            }
+
+            function scheduleFlush() {
+                // Cancel any existing timer
+                if (flushTimer) clearTimeout(flushTimer);
+                // Schedule a new flush if there's pending text
+                if (textPendingBytes.length > 0) {
+                    flushTimer = setTimeout(() => {
+                        if (textPendingBytes.length > 0) {
+                            const text = textDecoder.decode(textPendingBytes, { stream: true });
+                            if (text) writeToConsole(text, 'text-green-300');
+                            textPendingBytes = new Uint8Array(0);
+                        }
+                        flushTimer = null;
+                    }, FLUSH_DELAY_MS);
+                }
+            }
+
+            ws.onmessage = (event) => {
+                let chunk;
+                if (event.data instanceof ArrayBuffer) {
+                    chunk = new Uint8Array(event.data);
+                } else if (typeof event.data === 'string') {
+                    chunk = new TextEncoder().encode(event.data);
+                } else {
+                    // Fallback: attempt to coerce
+                    chunk = new TextEncoder().encode(String(event.data));
+                }
+
+                if (!receivingFile) {
+                    const combined = concatUint8Arrays([textPendingBytes, chunk]);
+                    const beginIdx = indexOfSubarray(combined, BEGIN_BYTES);
+                    if (beginIdx === -1) {
+                        // Flush all except overlap
+                        if (combined.length > OVERLAP_KEEP) {
+                            const flushLen = combined.length - OVERLAP_KEEP;
+                            const toFlush = combined.slice(0, flushLen);
+                            textPendingBytes = combined.slice(flushLen);
+                            const t = textDecoder.decode(toFlush, { stream: true });
+                            if (t) writeToConsole(t, 'text-green-300');
+                        } else {
+                            textPendingBytes = combined;
+                        }
+                        // Schedule a flush for any remaining bytes
+                        scheduleFlush();
+                        return;
+                    }
+                    // Flush text before BEGIN
+                    const before = combined.slice(0, beginIdx);
+                    if (before.length) {
+                        const t = textDecoder.decode(before, { stream: true });
+                        if (t) writeToConsole(t, 'text-green-300');
+                    }
+                    // Cancel any pending flush since we're switching to file mode
+                    if (flushTimer) {
+                        clearTimeout(flushTimer);
+                        flushTimer = null;
+                    }
+                    // Switch to file mode
+                    receivingFile = true;
+                    writeToConsole('[FILE] Begin incoming file transfer... (0 bytes received)', 'text-yellow-400');
+                    let afterBegin = combined.slice(beginIdx + BEGIN_BYTES.length);
+                    const endIdxSame = indexOfSubarray(afterBegin, END_BYTES);
+                    if (endIdxSame !== -1) {
+                        const fileData = afterBegin.slice(0, endIdxSame);
+                        if (fileData.length) fileBuffer.push(fileData);
+                        saveBufferedFileBinary();
+                        receivingFile = false;
+                        const tail = afterBegin.slice(endIdxSame + END_BYTES.length);
+                        textPendingBytes = tail; // treat tail as text
+                    } else {
+                        fileBuffer.push(afterBegin);
+                        textPendingBytes = new Uint8Array(0);
+                    }
+                    return;
+                }
+
+                // File mode
+                fileBuffer.push(chunk);
+                const combinedFile = concatUint8Arrays(fileBuffer);
+                
+                // Update the "bytes received" message by finding and updating the progress line
+                const bytesReceived = combinedFile.length;
+                // Find the last transfer message and update it
+                const lastProgress = Array.from(output.children).reverse().find(el => 
+                    el.className === 'text-yellow-400' && 
+                    el.textContent.startsWith('[FILE] Begin incoming file transfer...')
+                );
+                if (lastProgress) {
+                    lastProgress.textContent = `[FILE] Begin incoming file transfer... (${bytesReceived.toLocaleString()} bytes received)`;
+                }
+                
+                const endIdx = indexOfSubarray(combinedFile, END_BYTES);
+                if (endIdx !== -1) {
+                    const fileData = combinedFile.slice(0, endIdx);
+                    const tail = combinedFile.slice(endIdx + END_BYTES.length);
+                    fileBuffer = [fileData];
+                    saveBufferedFileBinary();
+                    receivingFile = false;
+                    fileBuffer = [];
+                    textPendingBytes = tail; // leftover text
+                    // Flush if large leftover
+                    if (textPendingBytes.length > OVERLAP_KEEP) {
+                        const t = textDecoder.decode(textPendingBytes, { stream: true });
+                        if (t) writeToConsole(t, 'text-green-300');
+                        textPendingBytes = new Uint8Array(0);
+                    } else {
+                        // Schedule flush for the remaining tail
+                        scheduleFlush();
+                    }
+                }
+            };
+
+            function saveBufferedFileBinary() {
+                const data = concatUint8Arrays(fileBuffer);
+                const defaultName = 'download.bin';
+                const name = prompt('Enter filename to save:', defaultName);
+                if (!name) {
+                    writeToConsole('[FILE] Download cancelled.', 'text-yellow-400');
+                    fileBuffer = [];
+                    return;
+                }
+                const blob = new Blob([data], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = name;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                writeToConsole(`[FILE] Saved ${data.length} bytes as ${name}`, 'text-yellow-400');
+                fileBuffer = [];
+            }
+
+            ws.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+                // Note: The onerror event often doesn't contain a useful message directly
+            };
+
+            ws.onclose = (event) => {
+                // Cancel any pending flush timer
+                if (flushTimer) {
+                    clearTimeout(flushTimer);
+                    flushTimer = null;
+                }
+                // Flush any pending text bytes with final decode
+                if (typeof TextDecoder !== 'undefined') {
+                    const finalText = textDecoder.decode(textPendingBytes, { stream: false });
+                    if (finalText) writeToConsole(finalText, 'text-green-300');
+                    textPendingBytes = new Uint8Array(0);
+                }
+                updateStatus('disconnected', `Disconnected (${event.code})`);
+                writeToConsole(`[SYSTEM] Connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`, 'text-red-400');
+            };
+        }
+
+        // --- Command Sending Logic ---
+
+        function sendCommand() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                writeToConsole('[ERROR] Not connected.', 'text-red-500');
+                return;
+            }
+
+            const command = input.value;
+            if (!command.trim()) return;
+
+            // Display the user's command
+            // writeToConsole(`> ${command}`, 'text-white font-bold');
+            writeToConsole(`${command}\n`, 'text-green-300');
+
+            // Send the command over the WebSocket
+            ws.send(command);
+
+            // Clear the input field
+            input.value = '';
+        }
+
+        // --- Event Listeners ---
+
+        connectBtn.addEventListener('click', connectWebSocket);
+        sendBtn.addEventListener('click', sendCommand);
+
+        // Allow sending on Enter key press
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Prevent default form submission behavior (if it were a form)
+                sendCommand();
+            }
+        });
+
+        // Initialize connection status on load
+        document.addEventListener('DOMContentLoaded', () => {
+            updateStatus('disconnected', 'Disconnected');
+        });
+
+    </script>
+</body>
+</html>

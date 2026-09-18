@@ -1,0 +1,63 @@
+                                   ██▓▓▒                                        
+                                                                                
+                                   █           ██▓                              
+                                   █              ░                             
+                             ░██  ██           █                                
+                               ████████▓      ▒█                                
+                     █   ███▓  █████████       ▒                                
+                      █  █     █████████▒   ███████                             
+                       ████ █  ██████████▓   ███████                            
+                       ███    ████████████   ████████                           
+                 ██     ███  ██▓████████    █████████                           
+                 ▓██    █████     █        ▒███████                             
+                  ██    ░███████████████████   █                                
+              ▓█ ██      ████     █       ░ ████████                            
+                ▓░█     ▓█ ░▒██  ███     ▓   ████████                           
+                  ███████▒ ░    █▓ ██    █   ████████           ▒░░             
+                  ████████████  ▒  █▓   █   ████████       ▓▓▓▒▒░               
+                   ██████████████▒█  █ ▓   █████   ▒    ██▓                     
+                    █████████████████████████████████████                       
+                    ████████████████████████████████████                        
+                    ██████████████████████████████████                          
+                     ████████████████████████████████▓                          
+                    ▓███████████████████████████████                            
+                  █████████████████████████████                                 
+
+                 ▄▄▄▄    ██▓    ▄▄▄      ▄████▄   ██ ▄█▀  
+                ▓█████▄ ▓██▒   ▒████▄   ▒██▀ ▀█   ██▄█▒   
+                ▒██▒ ▄██▒██░   ▒██  ▀█▄ ▒▓█    ▄ ▓███▄░   
+                ▒████▀  ▒██░   ░██▄▄▄▄██▒▓▓▄ ▄██▒▓██ █▄   
+                ░▓█  ▀█▓░██████▒▓█   ▓██▒ ▓███▀ ░▒██▒ █▄  
+                ░▒▓███▀▒░ ▒░▓  ░▒▒   ▓▒█░ ░▒ ▒  ░▒ ▒▒ ▓▒  
+                ▒░▒   ░ ░ ░ ▒  ░ ▒   ▒▒ ░ ░  ▒   ░ ░▒ ▒░  
+                 ░    ░   ░ ░    ░   ▒  ░        ░ ░░ ░   
+                 ░          ░  ░     ░  ░ ░      ░  ░     
+            
+                     ██▓███  ▓█████ ▄▄▄       ██▀███   ██▓    
+                    ▓██░  ██▒▓█   ▀▒████▄    ▓██  ▒██▒▓██▒    
+                    ▓██░ ██▓▒▒███  ▒██  ▀█▄  ▓██ ░▄█ ▒▒██░    
+                    ▒██▄█▓▒ ▒▒▓█  ▄░██▄▄▄▄██ ▒██▀▀█▄  ▒██░    
+                    ▒██▒ ░  ░░▒████▒▓█   ▓██▒░██▓ ▒██▒░██████▒
+                    ▒▓▒░ ░  ░░░ ▒░ ░▒▒   ▓▒█░░ ▒▓ ░▒▓░░ ▒░▓  ░
+                    ░▒ ░      ░ ░  ░ ▒   ▒▒ ░  ░▒ ░ ▒░░ ░ ▒  ░
+                    ░░          ░    ░   ▒     ░░   ░   ░ ░   
+                                ░  ░     ░  ░   ░         ░  ░
+
+Available Commands:
+  DIR      <PATH>      - List files at specified PATH.
+  DOWNLOAD <FILEPATH>  - Download file at specified FILEPATH.
+  CONTACT  <MESSAGE>   - Leave specified MESSAGE for the developers to read.
+
+--- IMPORTANT ---
+To download files properly, use:
+
+  == For VERY LARGE files > 100KiB == 
+echo "DOWNLOAD <FILEPATH>" | torsocks netcat <address.onion> 80 | \
+    perl -0777 -ne 'if (/^(?:.*?BEGIN){3}(.*)/s) { print $1 }' > OUTPUT
+
+  == For Small files (Press [Enter] when the screen stops updating) ==
+torsocks netcat <address.onion> 80 | \
+    tee >(perl -0777 -ne 'if (/^(?:.*?BEGIN){3}(.*)/s) { print $1 }' > OUTPUT)
+
+Feel free to suggest new content with the CONTACT commmand.
+Content will be updated every Saturday, so come back every week for new content.
